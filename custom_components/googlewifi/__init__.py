@@ -5,7 +5,7 @@ import time
 from datetime import timedelta
 
 import voluptuous as vol
-from googlewifi import GoogleHomeIgnoreDevice, GoogleWifi, GoogleWifiException
+from .googlewifi_api import GoogleHomeIgnoreDevice, GoogleWifi, GoogleWifiException
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import CoreState, HomeAssistant, callback
@@ -91,7 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    
+
     return True
 
 

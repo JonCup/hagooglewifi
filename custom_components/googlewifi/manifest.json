@@ -1,18 +1,17 @@
 {
-    "domain": "googlewifi",
-    "name": "Google WiFi",
-    "config_flow": true,
-    "documentation": "https://github.com/djtimca/hagooglewifi",
-    "requirements": [
-      "googlewifi==0.0.21"
-    ],
-    "issue_tracker": "https://github.com/djtimca/hagooglewifi/issues",
-    "ssdp": [],
-    "zeroconf": [],
-    "homekit": {},
-    "dependencies": [],
-    "codeowners": [
-      "@djtimca"
-    ],
-    "version": "0.1.34"
-  }
+  "domain": "googlewifi",
+  "name": "Google WiFi",
+  "config_flow": true,
+  "documentation": "https://github.com/JonCup/hagooglewifi",
+  "requirements": [
+    "ghome-foyer-api>=1.0.0,<2.0.0",
+    "gpsoauth==2.0.0"
+  ],
+  "issue_tracker": "https://github.com/JonCup/hagooglewifi/issues",
+  "ssdp": [],
+  "zeroconf": [],
+  "homekit": {},
+  "dependencies": [],
+  "codeowners": [],
+  "version": "0.1.35-gpsoauth-local"
+}
