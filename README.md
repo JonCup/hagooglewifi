@@ -128,10 +128,6 @@ if [ ! -s "$PATCH_OUT" ]; then
   echo "No differences found. Patch file is empty: $PATCH_OUT"
 else
   echo "Patch written to: $PATCH_OUT"
-  if command -v base64 >/dev/null 2>&1; then
-    printf '\033]52;c;%s\a' "$(base64 < "$PATCH_OUT" | tr -d '\n')"
-    echo "Patch copied to clipboard if your terminal supports OSC52."
-  fi
 fi
 ```
 
