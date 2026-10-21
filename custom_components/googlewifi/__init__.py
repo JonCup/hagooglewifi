@@ -139,14 +139,20 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry):
     if entry.version < 2:
         data = dict(entry.data)
         legacy = (data.pop("refresh_token", None) or "").strip()
+        unique_id = entry.unique_id
         if legacy.startswith("gps:"):
             # Fork-era entries stored "gps:email:android_id:master_token", which
             # maps directly onto the current credentials, so no reauth is needed.
             parts = legacy.split(":", 3)
             if len(parts) == 4 and all(parts[1:]):
                 _, data[CONF_EMAIL], data[CONF_ANDROID_ID], data[CONF_MASTER_TOKEN] = parts
+                # The fork used the whole bundle (master token included) as the
+                # unique ID; match the config flow, which uses the email.
+                unique_id = data[CONF_EMAIL]
         # Any other legacy refresh token cannot be converted; reauth handles it.
-        hass.config_entries.async_update_entry(entry, data=data, version=2)
+        hass.config_entries.async_update_entry(
+            entry, data=data, unique_id=unique_id, version=2
+        )
 
     return True
 
