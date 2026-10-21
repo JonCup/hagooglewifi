@@ -1,10 +1,13 @@
 """Support for Google Wifi Connected Devices as Switch Internet on/off."""
+import ipaddress
+import logging
 import time
 
 import voluptuous as vol
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.const import ATTR_NAME, UnitOfDataRate
 from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC
@@ -12,6 +15,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util.dt import as_local, as_timestamp, parse_datetime
 
 from . import GoogleWifiEntity, GoogleWiFiUpdater
+from googlewifi import GoogleWifiException
 from .const import (
     ATTR_CONNECTIONS,
     ATTR_IDENTIFIERS,
@@ -24,12 +28,15 @@ from .const import (
     DOMAIN,
     PAUSE_UPDATE,
     SIGNAL_ADD_DEVICE,
-    SIGNAL_DELETE_DEVICE,
     unit_convert,
 )
 
 SERVICE_PRIORITIZE = "prioritize"
 SERVICE_CLEAR_PRIORITIZATION = "prioritize_reset"
+SERVICE_RESERVE_IP = "reserve_ip"
+SERVICE_REMOVE_IP_RESERVATION = "remove_ip_reservation"
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -83,7 +90,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
         entities = [entity]
         async_add_entities(entities)
 
-    async_dispatcher_connect(hass, SIGNAL_ADD_DEVICE, async_new_entities)
+    entry.async_on_unload(
+        async_dispatcher_connect(hass, SIGNAL_ADD_DEVICE, async_new_entities)
+    )
 
     # register service for reset
     platform = entity_platform.current_platform.get()
@@ -98,6 +107,18 @@ async def async_setup_entry(hass, entry, async_add_entities):
         SERVICE_CLEAR_PRIORITIZATION,
         {},
         "async_clear_prioritization",
+    )
+
+    platform.async_register_entity_service(
+        SERVICE_RESERVE_IP,
+        {vol.Required("ip_address"): cv.string},
+        "async_reserve_ip",
+    )
+
+    platform.async_register_entity_service(
+        SERVICE_REMOVE_IP_RESERVATION,
+        {},
+        "async_remove_ip_reservation",
     )
 
     return True
@@ -202,6 +223,16 @@ class GoogleWifiSwitch(GoogleWifiEntity, SwitchEntity):
                 self._item_id
             ]["network"]
 
+            self._attrs["reserved_ip"] = "NA"
+            for mapping in (
+                self.coordinator.data[self._system_id]["groupSettings"]["lanSettings"].get(
+                    "staticIpMappings"
+                )
+                or []
+            ):
+                if mapping.get("stationId") == self._item_id:
+                    self._attrs["reserved_ip"] = mapping.get("ipAddress", "NA")
+
         return self._state
 
     @property
@@ -238,8 +269,11 @@ class GoogleWifiSwitch(GoogleWifiEntity, SwitchEntity):
             ATTR_NAME: self._name,
             ATTR_MANUFACTURER: "Google",
             ATTR_MODEL: DEV_CLIENT_MODEL,
-            "via_device": (DOMAIN, self._system_id),
         }
+
+        via_device_id = self._via_device_id()
+        if via_device_id:
+            device_info["via_device_id"] = via_device_id
 
         return device_info
 
@@ -272,3 +306,63 @@ class GoogleWifiSwitch(GoogleWifiEntity, SwitchEntity):
         """Clear previous prioritization."""
 
         await self.coordinator.api.clear_prioritization(self._system_id)
+
+    async def async_reserve_ip(self, ip_address):
+        """Reserve a LAN IP for this client (DHCP IP reservation)."""
+
+        lan = self.coordinator.data[self._system_id]["groupSettings"]["lanSettings"]
+        try:
+            address = ipaddress.ip_address(ip_address.strip())
+            network = ipaddress.ip_network(
+                f"{lan['dhcpPoolBegin']}/{lan.get('netmask') or lan.get('prefixLength') or 24}",
+                strict=False,
+            )
+        except (KeyError, ValueError) as error:
+            raise HomeAssistantError(f"Invalid IP address {ip_address}: {error}") from error
+
+        if address not in network or address in (
+            network.network_address,
+            network.broadcast_address,
+        ):
+            raise HomeAssistantError(f"{address} is not a usable address in {network}.")
+        if str(address) in {
+            value
+            for key, value in lan.items()
+            if isinstance(value, str) and key not in ("dhcpPoolBegin", "dhcpPoolEnd")
+        }:
+            raise HomeAssistantError(f"{address} is used by the router itself.")
+
+        current = await self.coordinator.api.get_static_ip_mappings(self._system_id)
+        for mapping in current:
+            if (
+                mapping.get("ipAddress") == str(address)
+                and mapping.get("stationId") != self._item_id
+            ):
+                raise HomeAssistantError(
+                    f"{address} is already reserved for another device."
+                )
+
+        _LOGGER.warning("Google Wifi reservations before change: %s", current)
+        mappings = [m for m in current if m.get("stationId") != self._item_id]
+        mappings.append({"stationId": self._item_id, "ipAddress": str(address)})
+        await self._write_reservations(mappings)
+
+    async def async_remove_ip_reservation(self):
+        """Remove this client's DHCP IP reservation."""
+
+        current = await self.coordinator.api.get_static_ip_mappings(self._system_id)
+        mappings = [m for m in current if m.get("stationId") != self._item_id]
+        if len(mappings) == len(current):
+            return
+
+        _LOGGER.warning("Google Wifi reservations before change: %s", current)
+        await self._write_reservations(mappings)
+
+    async def _write_reservations(self, mappings):
+        """Write the full reservation list and refresh."""
+
+        try:
+            await self.coordinator.api.set_static_ip_mappings(self._system_id, mappings)
+        except GoogleWifiException as error:
+            raise HomeAssistantError(str(error)) from error
+        await self.coordinator.async_request_refresh()

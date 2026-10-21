@@ -3,27 +3,35 @@
     "config": {
       "step": {
         "user": {
-          "description": "Please get a refresh token from https://www.angelod.com/onhubauthtool to configure the integration.",
+          "description": "To connect you need a Google oauth_token:\n\n1. Open the [Google EmbeddedSetup sign-in page]({embedded_setup_url}) and sign in with the Google account that manages your Wifi network. The page may appear blank or keep loading forever - that is normal.\n2. Open the browser developer tools (press F12, or right-click the page and choose Inspect).\n3. Go to the Application tab (Chrome/Edge) or Storage tab (Firefox) and open Cookies -> {accounts_url}.\n4. Find the cookie named 'oauth_token' and copy its ENTIRE value - it starts with oauth2_4/.\n5. Paste it into the token field below with your Google account email.\n\nAdvanced: you can paste an existing master token (starts with aas_et/ or oauth2rt_1/) instead of the oauth_token cookie.",
           "data": {
-            "refresh_token": "Refresh Token",
+            "email": "Google account email",
+            "oauth_token": "OAuth or master token",
             "add_disabled": "Add all entities as enabled?"
+          }
+        },
+        "reauth_confirm": {
+          "description": "Your Google Wifi credentials are no longer valid.\n\n1. Open the [Google EmbeddedSetup sign-in page]({embedded_setup_url}) and sign in with the Google account that manages your Wifi network.\n2. Open developer tools (F12), go to Application -> Cookies -> {accounts_url} and copy the entire 'oauth_token' cookie value (starts with oauth2_4/).\n3. Paste it below with your Google account email.",
+          "data": {
+            "email": "Google account email",
+            "oauth_token": "OAuth or master token"
           }
         }
       },
       "error": {
-        "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
-        "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
-        "unknown": "[%key:common::config_flow::error::unknown%]"
+        "cannot_connect": "Could not reach Google. Check the internet connection and try again.",
+        "invalid_auth": "Google rejected these credentials. Check the email is correct and the token was copied in full, then sign in again for a fresh token - the oauth_token only works once.",
+        "unknown": "Something unexpected went wrong. Check the Home Assistant log for details."
       },
       "abort": {
-        "single_instance_allowed": "[%key:common::config_flow::abort::single_instance_allowed%]"
+        "single_instance_allowed": "[%key:common::config_flow::abort::single_instance_allowed%]",
+        "reauth_successful": "[%key:common::config_flow::abort::reauth_successful%]"
       }
     },
     "options": {
       "step": {
         "init": {
           "data": {
-            "refresh_token": "Enter the refresh token obtained from https://www.angelod.com/onhubauthtool",
             "add_disabled": "Add all entities as enabled?",
             "scan_interval": "Polling Interval (seconds)",
             "auto_speedtest": "Run speed test automatically?",
