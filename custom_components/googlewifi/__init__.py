@@ -7,7 +7,6 @@ from datetime import timedelta
 import voluptuous as vol
 from googlewifi import (
     GoogleHomeIgnoreDevice,
-    GoogleWifi,
     GoogleWifiAuthError,
     GoogleWifiException,
 )
@@ -28,6 +27,7 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
+from .api import GoogleWifi
 from .const import (
     ADD_DISABLED,
     CONF_ANDROID_ID,
@@ -138,8 +138,14 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Migrate legacy config entries to the current version."""
     if entry.version < 2:
         data = dict(entry.data)
-        # The legacy refresh token cannot be converted; reauth handles it.
-        data.pop("refresh_token", None)
+        legacy = (data.pop("refresh_token", None) or "").strip()
+        if legacy.startswith("gps:"):
+            # Fork-era entries stored "gps:email:android_id:master_token", which
+            # maps directly onto the current credentials, so no reauth is needed.
+            parts = legacy.split(":", 3)
+            if len(parts) == 4 and all(parts[1:]):
+                _, data[CONF_EMAIL], data[CONF_ANDROID_ID], data[CONF_MASTER_TOKEN] = parts
+        # Any other legacy refresh token cannot be converted; reauth handles it.
         hass.config_entries.async_update_entry(entry, data=data, version=2)
 
     return True

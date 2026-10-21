@@ -111,6 +111,21 @@ class GoogleWifiBinarySensor(GoogleWifiEntity, BinarySensorEntity):
                 if self.coordinator.data[self._system_id]["status"] == "WAN_ONLINE":
                     state = True
 
+                devices = self.coordinator.data[self._system_id]["devices"]
+                self._attrs["ip_reservations"] = [
+                    {
+                        "ip": mapping.get("ipAddress"),
+                        "name": devices.get(mapping.get("stationId"), {}).get(
+                            "friendlyName", "Unknown device"
+                        ),
+                        "station_id": mapping.get("stationId"),
+                    }
+                    for mapping in self.coordinator.data[self._system_id]["groupSettings"][
+                        "lanSettings"
+                    ].get("staticIpMappings")
+                    or []
+                ]
+
             self._state = state
         except TypeError:
             pass
