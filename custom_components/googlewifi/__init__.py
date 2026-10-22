@@ -7,6 +7,7 @@ from datetime import timedelta
 import voluptuous as vol
 from googlewifi import (
     GoogleHomeIgnoreDevice,
+    GoogleWifi,
     GoogleWifiAuthError,
     GoogleWifiException,
 )
@@ -27,7 +28,6 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .api import GoogleWifi
 from .const import (
     ADD_DISABLED,
     CONF_ANDROID_ID,

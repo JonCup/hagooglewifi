@@ -28,20 +28,3 @@ speed_test:
     entity_id:
       description: The entity id of a speed sensor on the system you want to test.
       example: sensor.googlewifi_system_upload_speed
-
-reserve_ip:
-  description: Reserve a LAN IP address for a Google Wifi client (DHCP IP reservation). Keeps all other reservations.
-  fields:
-    entity_id:
-      description: The switch entity of the client device.
-      example: switch.razr_2024
-    ip_address:
-      description: The IP address to reserve, inside the Google Wifi LAN.
-      example: 192.168.86.47
-
-remove_ip_reservation:
-  description: Remove the DHCP IP reservation for a Google Wifi client. Keeps all other reservations.
-  fields:
-    entity_id:
-      description: The switch entity of the client device.
-      example: switch.razr_2024

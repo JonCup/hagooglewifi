@@ -15,6 +15,6 @@
         "googlewifi==0.1.1"
     ],
     "ssdp": [],
-    "version": "0.1.38",
+    "version": "0.1.39",
     "zeroconf": []
 }
