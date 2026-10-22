@@ -361,6 +361,23 @@ class GoogleWifiSwitch(GoogleWifiEntity, SwitchEntity):
     async def _write_reservations(self, mappings):
         """Write the full reservation list and refresh."""
 
+        known = (
+            self.coordinator.data[self._system_id]["groupSettings"]["lanSettings"].get(
+                "staticIpMappings"
+            )
+            or []
+        )
+        kept = {m.get("stationId") for m in mappings}
+        missing = [
+            m
+            for m in known
+            if m.get("stationId") not in kept and m.get("stationId") != self._item_id
+        ]
+        if missing:
+            raise HomeAssistantError(
+                f"Refusing to write: {len(missing)} existing reservation(s) would be dropped; nothing was changed."
+            )
+
         try:
             await self.coordinator.api.set_static_ip_mappings(self._system_id, mappings)
         except GoogleWifiException as error:

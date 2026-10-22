@@ -19,7 +19,9 @@ class GoogleWifi(_GoogleWifi):
                 "Authorization": f"Bearer {self._api_token}",
                 "Content-Type": "application/json; charset=utf-8",
             }
-            return await self.get_api(url, headers, {}, params=(("prettyPrint", "false"),))
+            response = await self.get_api(url, headers, {}, params=(("prettyPrint", "false"),))
+            # GET groups/{id} wraps the record as {"group": {...}}.
+            return (response or {}).get("group", response or {})
         return {}
 
     async def get_static_ip_mappings(self, system_id: str):
