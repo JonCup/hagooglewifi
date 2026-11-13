@@ -10,6 +10,8 @@ from googlewifi import (
     GoogleWifi,
     GoogleWifiAuthError,
     GoogleWifiException,
+    GoogleWifiForbiddenError,
+    GoogleWifiRateLimitError,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
@@ -207,6 +209,45 @@ class GoogleWiFiUpdater(DataUpdateCoordinator):
         return True
 
     async def _async_update_data(self):
+        """Fetch data from the Google Wifi API, re-minting the token once if needed."""
+
+        try:
+            return await self._async_fetch_data()
+        except (GoogleWifiAuthError, GoogleWifiForbiddenError) as error:
+            # Google answers 403 for quota and transient backend reasons, so
+            # neither error type means the credentials are dead on its own. Mint
+            # a fresh access token and retry once; only ask for new credentials
+            # when Google actually rejects the stored master token.
+            _LOGGER.debug("GoogleWifi auth error, retrying with a fresh token: %s", error)
+            self.api = GoogleWifi(
+                **self.credentials,
+                session=aiohttp_client.async_get_clientsession(self.hass),
+            )
+            try:
+                await self.api.connect()
+            except GoogleWifiAuthError as token_error:
+                self.entry.async_start_reauth(self.hass)
+                raise UpdateFailed(
+                    f"GoogleWifi authentication failed: {token_error}"
+                ) from token_error
+            except (ConnectionError, ValueError) as connect_error:
+                raise UpdateFailed(
+                    f"Could not reach Google authentication: {connect_error}"
+                ) from connect_error
+
+            await asyncio.sleep(5)
+
+            try:
+                return await self._async_fetch_data()
+            except (GoogleWifiAuthError, GoogleWifiForbiddenError) as foyer_error:
+                # The master token minted fine, so the rejection came from Foyer
+                # itself (quota, rate limit, backend). Do not ask the user for
+                # credentials.
+                raise UpdateFailed(
+                    f"GoogleWifi request rejected while the stored token stays valid: {foyer_error}"
+                ) from foyer_error
+
+    async def _async_fetch_data(self):
         """Fetch data from Google Wifi API."""
 
         try:
@@ -298,17 +339,20 @@ class GoogleWiFiUpdater(DataUpdateCoordinator):
                 self._force_speed_update = None
 
             return system_data
-        except GoogleWifiAuthError as error:
-            # A Foyer 401/403 does not mean the stored master token is dead:
-            # Google returns them transiently. Only ask the user to sign in
-            # again when Google itself rejects the master token.
-            await self._async_check_master_token(error)
-            raise UpdateFailed(
-                f"GoogleWifi authentication failed: {error}"
-            ) from error
+        except (GoogleWifiAuthError, GoogleWifiForbiddenError):
+            # Handled by _async_update_data, which retries with a fresh token.
+            # GoogleWifiForbiddenError subclasses GoogleWifiException, so it
+            # must be re-raised before the generic handler below.
+            raise
+        except GoogleWifiRateLimitError as error:
+            raise UpdateFailed(f"GoogleWifi rate limited by Foyer: {error}") from error
         except GoogleWifiException as error:
-            session = aiohttp_client.async_create_clientsession(self.hass)
-            self.api = GoogleWifi(**self.credentials, session=session)
+            # Reuse Home Assistant's shared session: creating one per failure leaked
+            # an aiohttp ClientSession on every transient Google error.
+            self.api = GoogleWifi(
+                **self.credentials,
+                session=aiohttp_client.async_get_clientsession(self.hass),
+            )
             raise UpdateFailed(f"Error connecting to GoogleWifi: {error}") from error
         except GoogleHomeIgnoreDevice as error:
             raise UpdateFailed(f"Error connecting to GoogleWifi: {error}") from error
@@ -316,27 +360,6 @@ class GoogleWiFiUpdater(DataUpdateCoordinator):
             raise UpdateFailed(f"Error connecting to GoogleWifi: {error}") from error
         except ValueError as error:
             raise UpdateFailed(f"Invalid data from GoogleWifi: {error}") from error
-
-
-    async def _async_check_master_token(self, error):
-        """Start reauth only if Google rejects the stored master token."""
-        try:
-            await self.api.get_api_token(force_refresh=True)
-        except GoogleWifiAuthError as token_error:
-            _LOGGER.warning(
-                "Google rejected the stored master token, asking to sign in again: %s",
-                token_error,
-            )
-            self.entry.async_start_reauth(self.hass)
-            return
-        except (ConnectionError, ValueError) as token_error:
-            _LOGGER.debug("Could not re-check Google Wifi token: %s", token_error)
-            return
-        _LOGGER.debug(
-            "Foyer refused a request (%s) but the master token is still valid; "
-            "treating it as a temporary error",
-            error,
-        )
 
 
 class GoogleWifiEntity(CoordinatorEntity):
