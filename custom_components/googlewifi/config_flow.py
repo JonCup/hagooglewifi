@@ -56,15 +56,17 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry):
         """Get the options flow for this handler."""
-        return OptionsFlowHandler(config_entry)
+        return OptionsFlowHandler()
 
-    async def _async_validate_credentials(self, user_input, errors):
+    async def _async_validate_credentials(self, user_input, errors, android_id=None):
         """Exchange the oauth_token if needed and validate the credentials."""
         session = aiohttp_client.async_get_clientsession(self.hass)
 
         email = user_input[CONF_EMAIL].strip().lower()
         token_input = user_input[CONF_OAUTH_TOKEN].strip()
-        android_id = secrets.token_hex(8)
+        # A master token is bound to the android_id it was minted with, so keep the
+        # stored one on reauth instead of presenting Google with a new "device".
+        android_id = android_id or secrets.token_hex(8)
 
         if token_input.startswith(MASTER_TOKEN_PREFIXES):
             master_token = token_input
@@ -154,7 +156,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         reauth_entry = self._get_reauth_entry()
 
         if user_input is not None:
-            credentials = await self._async_validate_credentials(user_input, errors)
+            credentials = await self._async_validate_credentials(
+                user_input,
+                errors,
+                android_id=reauth_entry.data.get(CONF_ANDROID_ID),
+            )
             if credentials:
                 credentials[ADD_DISABLED] = reauth_entry.data.get(
                     ADD_DISABLED, True
@@ -176,10 +182,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options flow changes."""
-
-    def __init__(self, config_entry):
-        """Initialize options flow."""
-        self.config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
         """Manage options."""
