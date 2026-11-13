@@ -299,7 +299,10 @@ class GoogleWiFiUpdater(DataUpdateCoordinator):
 
             return system_data
         except GoogleWifiAuthError as error:
-            self.entry.async_start_reauth(self.hass)
+            # A Foyer 401/403 does not mean the stored master token is dead:
+            # Google returns them transiently. Only ask the user to sign in
+            # again when Google itself rejects the master token.
+            await self._async_check_master_token(error)
             raise UpdateFailed(
                 f"GoogleWifi authentication failed: {error}"
             ) from error
@@ -313,6 +316,27 @@ class GoogleWiFiUpdater(DataUpdateCoordinator):
             raise UpdateFailed(f"Error connecting to GoogleWifi: {error}") from error
         except ValueError as error:
             raise UpdateFailed(f"Invalid data from GoogleWifi: {error}") from error
+
+
+    async def _async_check_master_token(self, error):
+        """Start reauth only if Google rejects the stored master token."""
+        try:
+            await self.api.get_api_token(force_refresh=True)
+        except GoogleWifiAuthError as token_error:
+            _LOGGER.warning(
+                "Google rejected the stored master token, asking to sign in again: %s",
+                token_error,
+            )
+            self.entry.async_start_reauth(self.hass)
+            return
+        except (ConnectionError, ValueError) as token_error:
+            _LOGGER.debug("Could not re-check Google Wifi token: %s", token_error)
+            return
+        _LOGGER.debug(
+            "Foyer refused a request (%s) but the master token is still valid; "
+            "treating it as a temporary error",
+            error,
+        )
 
 
 class GoogleWifiEntity(CoordinatorEntity):
